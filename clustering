@@ -1,0 +1,64 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans
+from sklearn.manifold import TSNE
+from sklearn.datasets import make_blobs
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import silhouette_score
+
+# Generate a synthetic dataset
+# Replace this with your actual dataset
+n_samples = 300
+n_features = 8
+X, _ = make_blobs(n_samples=n_samples, n_features=n_features, centers=5, random_state=42)
+df = pd.DataFrame(X, columns=[f'feature_{i}' for i in range(1, n_features + 1)])
+df['identifier'] = range(n_samples)
+
+# Standardize the features
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(df.drop('identifier', axis=1))
+
+# Determine the optimal number of clusters using the silhouette score
+silhouette_scores = []
+K = range(2, 11)
+
+for k in K:
+    kmeans = KMeans(n_clusters=k, init='k-means++', random_state=42)
+    clusters = kmeans.fit_predict(X_scaled)
+    silhouette_scores.append(silhouette_score(X_scaled, clusters))
+
+# Plot the silhouette scores
+plt.figure(figsize=(8, 6))
+plt.plot(K, silhouette_scores, 'bx-')
+plt.xlabel('Number of clusters')
+plt.ylabel('Silhouette Score')
+plt.title('Silhouette Score method showing the optimal k')
+plt.show()
+
+# From the plot, we choose the optimal number of clusters (e.g., k=5 based on the maximum silhouette score)
+optimal_k = K[silhouette_scores.index(max(silhouette_scores))]
+
+# Apply KMeans++ clustering with the optimal number of clusters
+kmeans = KMeans(n_clusters=optimal_k, init='k-means++', random_state=42)
+clusters = kmeans.fit_predict(X_scaled)
+
+# Add the cluster labels to the dataframe
+df['cluster'] = clusters
+
+# Create a separate dataframe for each cluster
+cluster_dfs = {i: df[df['cluster'] == i].reset_index(drop=True) for i in range(optimal_k)}
+
+# Visualize clusters using t-SNE
+tsne = TSNE(n_components=2, random_state=42)
+X_tsne = tsne.fit_transform(X_scaled)
+
+# Plot the t-SNE visualization
+plt.figure(figsize=(10, 8))
+for i in range(optimal_k):
+    plt.scatter(X_tsne[clusters == i, 0], X_tsne[clusters == i, 1], label=f'Cluster {i}', alpha=0.6)
+plt.legend()
+plt.title('t-SNE visualization of KMeans clusters')
+plt.xlabel('t-SNE component 1')
+plt.ylabel('t-SNE component 2')
+plt.show()
