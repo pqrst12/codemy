@@ -5,7 +5,7 @@ from sklearn.cluster import KMeans
 from sklearn.manifold import TSNE
 from sklearn.datasets import make_blobs
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import silhouette_score
+from scipy.spatial.distance import cdist
 
 # Generate a synthetic dataset
 # Replace this with your actual dataset
@@ -19,25 +19,25 @@ df['identifier'] = range(n_samples)
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(df.drop('identifier', axis=1))
 
-# Determine the optimal number of clusters using the silhouette score
-silhouette_scores = []
-K = range(2, 11)
+# Determine the optimal number of clusters using the elbow method
+distortions = []
+K = range(1, 11)
 
 for k in K:
     kmeans = KMeans(n_clusters=k, init='k-means++', random_state=42)
-    clusters = kmeans.fit_predict(X_scaled)
-    silhouette_scores.append(silhouette_score(X_scaled, clusters))
+    kmeans.fit(X_scaled)
+    distortions.append(sum(np.min(cdist(X_scaled, kmeans.cluster_centers_, 'euclidean'), axis=1)) / X_scaled.shape[0])
 
-# Plot the silhouette scores
+# Plot the elbow method result
 plt.figure(figsize=(8, 6))
-plt.plot(K, silhouette_scores, 'bx-')
+plt.plot(K, distortions, 'bx-')
 plt.xlabel('Number of clusters')
-plt.ylabel('Silhouette Score')
-plt.title('Silhouette Score method showing the optimal k')
+plt.ylabel('Distortion')
+plt.title('The Elbow Method showing the optimal k')
 plt.show()
 
-# From the plot, we choose the optimal number of clusters (e.g., k=5 based on the maximum silhouette score)
-optimal_k = K[silhouette_scores.index(max(silhouette_scores))]
+# From the plot, we choose the optimal number of clusters (e.g., k=5)
+optimal_k = 5
 
 # Apply KMeans++ clustering with the optimal number of clusters
 kmeans = KMeans(n_clusters=optimal_k, init='k-means++', random_state=42)
