@@ -2,12 +2,30 @@ import xgboost as xgb
 from hyperopt import hp, tpe, fmin, Trials, STATUS_OK
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
-from sklearn.datasets import load_boston
+from sklearn.preprocessing import LabelEncoder
+from sklearn.datasets import fetch_california_housing
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
 # Load dataset (replace with your data loading code)
-data = load_boston()
+data = fetch_california_housing()
 X, y = data.data, data.target
+
+# Example data preparation with two categorical features
+# Here we'll create a DataFrame and add two synthetic categorical features for demonstration
+X = pd.DataFrame(X, columns=data.feature_names)
+X['cat_feature_1'] = np.random.choice(['A', 'B', 'C'], size=len(X))
+X['cat_feature_2'] = np.random.choice(['X', 'Y'], size=len(X))
+
+# Label encode the categorical features
+label_encoders = {}
+for col in ['cat_feature_1', 'cat_feature_2']:
+    le = LabelEncoder()
+    X[col] = le.fit_transform(X[col])
+    label_encoders[col] = le
+
+# Split the data
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 # Define the hyperparameter search space
@@ -75,3 +93,4 @@ print(f"Final MSE: {final_mse}")
 # Plot feature importance
 xgb.plot_importance(final_model, importance_type='weight')
 plt.show()
+
