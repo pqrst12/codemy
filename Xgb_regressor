@@ -93,4 +93,66 @@ print(f"Final MSE: {final_mse}")
 # Plot feature importance
 xgb.plot_importance(final_model, importance_type='weight')
 plt.show()
+##################################################### weighted regressionm ################################################################################
+
+import xgboost as xgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error
+from hyperopt import fmin, tpe, hp, Trials, STATUS_OK
+
+# Define the custom loss function for XGBoost
+def custom_xgb_loss(y_pred, y_true):
+    weight = np.where(y_true.get_label() <= 60, 2, 1)
+    errors = np.abs(y_true.get_label() - y_pred)
+    return 'custom_loss', np.mean(weight * errors)
+
+# Objective function for hyperopt
+def objective(params):
+    model = xgb.XGBRegressor(
+        n_estimators=int(params['n_estimators']),
+        max_depth=int(params['max_depth']),
+        learning_rate=params['learning_rate'],
+        subsample=params['subsample'],
+        colsample_bytree=params['colsample_bytree']
+    )
+    model.fit(X_train, y_train, eval_set=[(X_valid, y_valid)], eval_metric=custom_xgb_loss, early_stopping_rounds=10, verbose=False)
+    preds = model.predict(X_valid)
+    loss = mean_absolute_error(y_valid, preds)
+    return {'loss': loss, 'status': STATUS_OK}
+
+# Define the search space
+space = {
+    'n_estimators': hp.quniform('n_estimators', 100, 1000, 10),
+    'max_depth': hp.quniform('max_depth', 3, 15, 1),
+    'learning_rate': hp.uniform('learning_rate', 0.01, 0.3),
+    'subsample': hp.uniform('subsample', 0.6, 1.0),
+    'colsample_bytree': hp.uniform('colsample_bytree', 0.6, 1.0)
+}
+
+# Load your data
+# X, y = load_your_data_here()
+
+# Split the data
+X_train, X_valid, y_train, y_valid = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Run hyperopt
+trials = Trials()
+best = fmin(fn=objective, space=space, algo=tpe.suggest, max_evals=50, trials=trials)
+
+# Train final model with the best hyperparameters
+best_params = {
+    'n_estimators': int(best['n_estimators']),
+    'max_depth': int(best['max_depth']),
+    'learning_rate': best['learning_rate'],
+    'subsample': best['subsample'],
+    'colsample_bytree': best['colsample_bytree']
+}
+
+final_model = xgb.XGBRegressor(**best_params)
+final_model.fit(X_train, y_train, eval_set=[(X_valid, y_valid)], eval_metric=custom_xgb_loss, early_stopping_rounds=10, verbose=True)
+
+# Evaluate the final model
+preds = final_model.predict(X_valid)
+final_mae = mean_absolute_error(y_valid, preds)
+print(f'Final MAE: {final_mae}')
 
