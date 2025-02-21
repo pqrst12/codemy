@@ -10,3 +10,5 @@ https://mlabonne.github.io/blog/posts/2024-07-29_Finetune_Llama31.html
 https://www.llama.com/docs/model-cards-and-prompt-formats/llama3_1/#model-card
 
 https://github.com/huggingface/cookbook/tree/main/notebooks/en
+
+https://mlabonne.github.io/blog/posts/2024-03-28_Create_Mixture_of_Experts_with_MergeKit.html------------->.MOE
