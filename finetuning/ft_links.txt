@@ -1,0 +1,12 @@
+https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/Llama3.2_(1B_and_3B)-Conversational.ipynb#scrollTo=6bZsfBuZDeCL
+
+https://www.llama.com/docs/model-cards-and-prompt-formats/llama3_1/#model-card
+
+
+https://colab.research.google.com/drive/1NoVXxvXscJHzAHytSWTqPZ49YY_DecSd?usp=sharing#scrollTo=zdfjufQd3XM
+---maximlabonned
+https://mlabonne.github.io/blog/posts/2024-07-29_Finetune_Llama31.html
+
+https://www.llama.com/docs/model-cards-and-prompt-formats/llama3_1/#model-card
+
+https://github.com/huggingface/cookbook/tree/main/notebooks/en
