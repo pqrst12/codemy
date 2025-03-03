@@ -99,35 +99,98 @@ COMPLEX_ISSUES = [
         "causes": ["Clock Drift", "Backhaul Latency", "Sync Signal Loss"],
         "resolution": "Improve clock synchronization and minimize backhaul delays."
     },
+    {
+        "name": "Paging Storm",
+        "log_template": """
+        [PAGING] [ALERT] Excessive Paging Requests Detected
+        gNB ID: {gnb_id}
+        Paging Load: {paging_load}%
+        Cause: {paging_cause}
+        """,
+        "causes": ["UE Misbehavior", "Core Network Overload"],
+        "resolution": "Mitigate paging load by adjusting thresholds and monitoring UE behavior."
+    },
+    {
+        "name": "Control Plane Congestion",
+        "log_template": """
+        [CONTROL] [ERROR] High Signaling Load Detected
+        gNB ID: {gnb_id}
+        CPU Utilization: {cpu_utilization}%
+        Cause: {control_cause}
+        """,
+        "causes": ["Excessive UE Registration", "Frequent Session Modifications"],
+        "resolution": "Optimize session handling and distribute signaling load."
+    },
+    {
+        "name": "Backhaul Link Instability",
+        "log_template": """
+        [BACKHAUL] [ERROR] Frequent Link Fluctuations Detected
+        gNB ID: {gnb_id}
+        Packet Loss: {packet_loss}%
+        Cause: {backhaul_cause}
+        """,
+        "causes": ["Fluctuating Fiber Quality", "Routing Instability"],
+        "resolution": "Enhance fiber stability and improve routing resilience."
+    },
+    {
+        "name": "Unexpected Call Drop",
+        "log_template": """
+        [CALL] [ERROR] Unexpected Call Drop
+        UE ID: {ue_id}
+        Cell ID: {cell_id}
+        PCI: {pci}
+        Cause: {call_cause}
+        """,
+        "causes": ["Network Load", "Interference", "Resource Preemption"],
+        "resolution": "Increase capacity, manage resource allocation dynamically."
+    }
 ]
 
-def generate_complex_log():
-    issue = random.choice(COMPLEX_ISSUES)
-    log_entry = issue["log_template"].format(
-        ue_id=random_id(),
-        cell_id=random.randint(1001, 1099),
-        pci=random.randint(1, 512),
-        sinr=random.randint(-20, 10),
-        rsrp=random.randint(-130, -80),
-        source_cell=random.randint(1001, 1099),
-        target_cell=random.randint(1001, 1099),
-        rsrp_source=random.randint(-100, -80),
-        rsrp_target=random.randint(-130, -90),
-        interference_level=random.randint(-90, -60),
-        suspect_cell=random.randint(1001, 1099),
-        gnb_id=random.randint(5000, 5999),
-        upf_ip=f"10.{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}",
-        packet_loss=random.randint(50, 99),
-        before_drop=random.randint(300, 800),
-        dropped_ues=random.randint(50, 200),
-        cpu_utilization=random.randint(80, 99),
-        slice_type=random.choice(["eMBB", "URLLC", "mMTC"]),
-        slice_id=random.randint(1, 20),
-        **{k: random.choice(issue["causes"]) for k in issue["log_template"].count("{")}
-    )
-    return {"log": log_entry, "issue": issue["name"], "resolution": issue["resolution"]}
 
-# Generate 5000 samples
-dataset = Dataset.from_list([generate_complex_log() for _ in range(5000)])
+def random_id():
+    return f"UE{random.randint(100000, 999999)}"
 
-dataset.push_to_hub("5G_complex_logs_dataset")
+# Generate 5000 log samples
+def generate_samples(n=5000):
+    samples = []
+    for _ in range(n):
+        issue = random.choice(COMPLEX_ISSUES)
+        log = issue["log_template"].format(
+            ue_id=random_id(),
+            cell_id=random.randint(1001, 1099),
+            pci=random.randint(1, 512),
+            sinr=random.randint(-20, 10),
+            rsrp=random.randint(-130, -80),
+            source_cell=random.randint(1001, 1099),
+            target_cell=random.randint(1001, 1099),
+            rsrp_source=random.randint(-100, -80),
+            rsrp_target=random.randint(-130, -90),
+            interference_level=random.randint(-90, -60),
+            suspect_cell=random.randint(1001, 1099),
+            gnb_id=random.randint(5000, 5999),
+            upf_ip=f"10.{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}",
+            packet_loss=random.randint(50, 99),
+            before_drop=random.randint(300, 800),
+            dropped_ues=random.randint(50, 200),
+            cpu_utilization=random.randint(80, 99),
+            slice_type=random.choice(["eMBB", "URLLC", "mMTC"]),
+            slice_id=random.randint(1, 20),
+            rrc_cause=random.choice(["Radio Link Failure", "Network Congestion", "Weak Signal Strength"]),
+            ho_cause=random.choice(["Handover Timeout", "Target Cell Rejection", "High Latency"]),
+            transport_cause=random.choice(["Fiber Link Failure", "Router Overload", "Packet Buffer Overflow"]),
+            ue_drop_cause=random.choice(["Unexpected UE Detach", "Core Network Signaling Failure", "Authentication Timeout"]),
+            slice_cause=random.choice(["Insufficient Slice Resources", "Incorrect Slice Mapping", "Slice Policy Violation"]),
+            sync_cause=random.choice(["Clock Drift", "Backhaul Latency", "Sync Signal Loss"]),
+            paging_load=random.randint(70, 100),
+            paging_cause=random.choice(["UE Misbehavior", "Core Network Overload", "Paging Rate Exceeded"]),
+            control_cause=random.choice(["Excessive UE Registrations", "Frequent Session Modifications", "Signaling Storm"]),
+            backhaul_cause=random.choice(["Fluctuating Fiber Quality", "Routing Instability", "Packet Loss Burst"]),
+            call_cause=random.choice(["Network Load", "Interference", "Resource Preemption"])
+        )
+        samples.append({"log": log, "issue": issue["name"], "resolution": issue["resolution"]})
+    return samples
+
+# Generate dataset
+dataset = Dataset.from_list(generate_samples(5000))
+dataset.save_to_disk("5g_network_logs")
+
