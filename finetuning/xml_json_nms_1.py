@@ -6,7 +6,7 @@ import re
 
 def xml_to_json(xml_file_path, json_file_path=None):
     """
-    Convert an XML file to clean JSON format with namespace information at root level.
+    Convert an XML file to clean JSON format, preserving namespaces at root and child levels.
     
     Args:
         xml_file_path (str): Path to the XML file
@@ -23,14 +23,8 @@ def xml_to_json(xml_file_path, json_file_path=None):
     tree = ET.parse(xml_file_path)
     root = tree.getroot()
     
-    # Extract namespaces
-    namespaces = extract_namespaces(root)
-    
-    # Convert XML to JSON with namespaces
-    json_data = {
-        "namespaces": namespaces,
-        **element_to_clean_dict(root, namespaces)
-    }
+    # Convert XML to JSON with namespace preservation at root and child levels
+    json_data = element_to_clean_dict(root, preserve_namespace=True)
     
     # Write JSON to file
     with open(json_file_path, 'w', encoding='utf-8') as f:
@@ -39,63 +33,91 @@ def xml_to_json(xml_file_path, json_file_path=None):
     print(f"Converted {xml_file_path} to {json_file_path}")
     return json_file_path
 
-def extract_namespaces(element):
+def element_to_clean_dict(element, preserve_namespace=False, is_child=False):
     """
-    Extract namespace information from XML element.
+    Convert an XML element to a clean dictionary representation.
     
     Args:
         element: An ElementTree element
+        preserve_namespace: Whether to preserve namespace (only at root and child levels)
+        is_child: Whether the element is a direct child of the root
         
     Returns:
-        dict: Dictionary of namespace prefixes and URIs
+        dict: Clean dictionary representation of the element
     """
-    namespaces = {}
+    result = {}
     
-    # Extract namespaces from the entire tree
-    for elem in element.iter():
-        # Check the element's tag for namespace
-        if '}' in elem.tag:
-            ns_uri = elem.tag.split('}', 1)[0].strip('{')
-            # Find the prefix for this namespace
-            for prefix, uri in elem.nsmap.items() if hasattr(elem, 'nsmap') else []:
-                if uri == ns_uri:
-                    namespaces[prefix if prefix else "default"] = uri
+    # Add namespace information at root or child level
+    if preserve_namespace and (not is_child):
+        # Extract namespace from tag if present
+        tag = element.tag
+        namespace = None
+        if '}' in tag:
+            namespace, tag_name = tag.split('}', 1)
+            namespace = namespace[1:]  # Remove the leading '{'
+            result["namespace"] = namespace
+    
+    # Add element attributes directly to the result
+    if element.attrib:
+        for key, value in element.attrib.items():
+            # Preserve namespace in attribute keys at root or child level
+            if preserve_namespace and (not is_child) and '}' in key:
+                ns, attr_name = key.split('}', 1)
+                clean_key = f"ns:{format_key(attr_name)}"
+            else:
+                # Format attribute keys to be camelCase
+                clean_key = format_key(key)
+            result[clean_key] = format_value(value)
+    
+    # Process child elements
+    child_elements = list(element)
+    
+    # If there are no child elements, just return the text content or empty dict
+    if not child_elements:
+        if element.text and element.text.strip():
+            # If this is a leaf node with just text, return the text directly
+            return format_value(element.text.strip())
+        else:
+            return result
+    
+    # Process child elements
+    for child in child_elements:
+        # Get tag name with namespace info for direct children of root
+        tag = child.tag
+        clean_tag = ""
         
-        # Check attributes for namespaces
-        for attr_name in elem.attrib:
-            if '}' in attr_name:
-                ns_uri = attr_name.split('}', 1)[0].strip('{')
-                for prefix, uri in elem.nsmap.items() if hasattr(elem, 'nsmap') else []:
-                    if uri == ns_uri:
-                        namespaces[prefix if prefix else "default"] = uri
-    
-    # If ElementTree doesn't expose nsmap, extract from the root element directly
-    if not namespaces and hasattr(element, 'attrib'):
-        for attr_name, value in element.attrib.items():
-            if attr_name.startswith('xmlns:'):
-                prefix = attr_name.split(':', 1)[1]
-                namespaces[prefix] = value
-            elif attr_name == 'xmlns':
-                namespaces["default"] = value
-    
-    return namespaces
-
-def get_namespace_info(tag):
-    """
-    Extract namespace URI and local name from a tag.
-    
-    Args:
-        tag (str): The tag with possible namespace
+        if preserve_namespace and (not is_child):
+            if '}' in tag:
+                ns, tag_name = tag.split('}', 1)
+                ns = ns[1:]  # Remove the leading '{'
+                clean_tag = format_key(tag_name)
+                child_dict = element_to_clean_dict(child, False, True)
+                # Add namespace info to child
+                child_dict = {"namespace": ns, "value": child_dict} if isinstance(child_dict, dict) else {"namespace": ns, "value": child_dict}
+            else:
+                clean_tag = format_key(tag)
+                child_dict = element_to_clean_dict(child, False, True)
+        else:
+            # For deeper levels, don't preserve namespace
+            if '}' in tag:
+                tag = tag.split('}', 1)[1]
+            clean_tag = format_key(tag)
+            child_dict = element_to_clean_dict(child, False, True)
         
-    Returns:
-        tuple: (namespace_uri, local_name) or (None, tag) if no namespace
-    """
-    if '}' in tag:
-        ns_uri = tag.split('}', 1)[0].strip('{')
-        local_name = tag.split('}', 1)[1]
-        return ns_uri, local_name
-    else:
-        return None, tag
+        # Handle child elements with the same tag
+        if clean_tag in result:
+            if isinstance(result[clean_tag], list):
+                result[clean_tag].append(child_dict)
+            else:
+                result[clean_tag] = [result[clean_tag], child_dict]
+        else:
+            result[clean_tag] = child_dict
+    
+    # If there's text content mixed with child elements, add it as a special key
+    if element.text and element.text.strip():
+        result["content"] = format_value(element.text.strip())
+        
+    return result
 
 def format_key(key):
     """
@@ -154,95 +176,6 @@ def format_value(value):
     
     # Otherwise, return as string
     return value
-
-def get_namespace_prefix(uri, namespaces):
-    """
-    Get namespace prefix from URI.
-    
-    Args:
-        uri (str): Namespace URI
-        namespaces (dict): Dictionary of namespace prefixes and URIs
-        
-    Returns:
-        str: Namespace prefix or None if not found
-    """
-    for prefix, namespace_uri in namespaces.items():
-        if namespace_uri == uri:
-            return prefix
-    return None
-
-def element_to_clean_dict(element, namespaces):
-    """
-    Convert an XML element to a clean dictionary representation with namespace info at root level.
-    
-    Args:
-        element: An ElementTree element
-        namespaces: Dictionary of namespace prefixes and URIs
-    
-    Returns:
-        dict: Clean dictionary representation of the element
-    """
-    result = {}
-    
-    # Get namespace info for this element
-    ns_uri, local_name = get_namespace_info(element.tag)
-    if ns_uri:
-        ns_prefix = get_namespace_prefix(ns_uri, namespaces)
-        if ns_prefix:
-            result["_namespace"] = ns_prefix
-    
-    # Add element attributes
-    attributes = {}
-    for key, value in element.attrib.items():
-        attr_ns_uri, attr_local_name = get_namespace_info(key)
-        clean_key = format_key(attr_local_name)
-        
-        # Add namespace info for attribute if present
-        if attr_ns_uri:
-            attr_ns_prefix = get_namespace_prefix(attr_ns_uri, namespaces)
-            if attr_ns_prefix:
-                attributes[clean_key] = {
-                    "_namespace": attr_ns_prefix,
-                    "value": format_value(value)
-                }
-        else:
-            attributes[clean_key] = format_value(value)
-    
-    if attributes:
-        result["_attributes"] = attributes
-    
-    # Process child elements
-    child_elements = list(element)
-    
-    # If there are no child elements, just return the text content or current result
-    if not child_elements:
-        if element.text and element.text.strip():
-            result["_value"] = format_value(element.text.strip())
-            return result
-        return result
-    
-    # Process child elements
-    for child in child_elements:
-        # Get namespace and tag name
-        child_ns_uri, child_local_name = get_namespace_info(child.tag)
-        clean_tag = format_key(child_local_name)
-        
-        child_dict = element_to_clean_dict(child, namespaces)
-        
-        # Handle child elements with the same tag
-        if clean_tag in result:
-            if isinstance(result[clean_tag], list):
-                result[clean_tag].append(child_dict)
-            else:
-                result[clean_tag] = [result[clean_tag], child_dict]
-        else:
-            result[clean_tag] = child_dict
-    
-    # If there's text content mixed with child elements, add it as a special key
-    if element.text and element.text.strip():
-        result["_content"] = format_value(element.text.strip())
-        
-    return result
 
 def convert_all_xml_files(input_dir, output_dir=None):
     """
