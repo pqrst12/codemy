@@ -9,7 +9,6 @@ from transformers import (
     AutoTokenizer,
     TrainingArguments,
     BitsAndBytesConfig,
-    Trainer,
 )
 from peft import (
     LoraConfig,
@@ -18,6 +17,7 @@ from peft import (
 )
 from trl import SFTTrainer
 from sklearn.model_selection import train_test_split
+from transformers.trainer_pt_utils import get_parameter_names
 
 # Set seed for reproducibility
 def set_seed(seed):
@@ -99,122 +99,42 @@ model.print_trainable_parameters()
 # Enable gradient checkpointing
 model.gradient_checkpointing_enable()
 
-# Custom data collator to handle completion-only loss calculation
-class CompletionOnlyDataCollator:
-    def __init__(self, tokenizer):
-        self.tokenizer = tokenizer
-        self.assistant_token = "<|im_start|>assistant\n"
-        self.end_token = "<|im_end|>"
-        
-    def __call__(self, examples):
-        batch = {}
-        
-        # Process each example
-        input_ids_list = [example["input_ids"] for example in examples]
-        attention_mask_list = [example["attention_mask"] for example in examples]
-        
-        # Initialize labels with -100 for all tokens (to be ignored in loss calculation)
-        labels_list = [[-100] * len(ids) for ids in input_ids_list]
-        
-        # For each example, find the assistant's response part and set labels for only those tokens
-        for i, (input_ids, labels) in enumerate(zip(input_ids_list, labels_list)):
-            # Convert input_ids to string to find the assistant token
-            text = self.tokenizer.decode(input_ids)
-            
-            # Find the position of the assistant token
-            assistant_pos = text.find(self.assistant_token)
-            
-            if assistant_pos != -1:
-                # Get the text starting from the assistant token
-                assistant_text = text[assistant_pos:]
-                
-                # Find the end of the assistant's message
-                end_pos = assistant_text.find(self.end_token)
-                if end_pos != -1:
-                    assistant_text = assistant_text[:end_pos + len(self.end_token)]
-                
-                # Convert the assistant text to tokens
-                assistant_tokens = self.tokenizer.encode(assistant_text)
-                
-                # Find the start position of assistant tokens in the input_ids
-                start_pos = len(self.tokenizer.encode(text[:assistant_pos]))
-                
-                # Set labels for the assistant tokens
-                for j in range(start_pos, min(start_pos + len(assistant_tokens), len(labels))):
-                    labels[j] = input_ids[j]
-                    
-        # Create the batch
-        batch["input_ids"] = torch.tensor(input_ids_list, dtype=torch.long)
-        batch["attention_mask"] = torch.tensor(attention_mask_list, dtype=torch.long)
-        batch["labels"] = torch.tensor(labels_list, dtype=torch.long)
-        
-        return batch
-
-# Modified preprocessing function
-def preprocess_function(examples):
-    # This function handles batch processing
-    formatted_texts = []
-    
-    for i in range(len(examples['instruction']) if 'instruction' in examples else len(examples['text'])):
-        if 'instruction' in examples and 'response' in examples:
-            if 'input' in examples and examples['input'][i]:
-                text = f"<|im_start|>user\n{examples['instruction'][i]}\n\n{examples['input'][i]}<|im_end|>\n<|im_start|>assistant\n{examples['response'][i]}<|im_end|>"
-            else:
-                text = f"<|im_start|>user\n{examples['instruction'][i]}<|im_end|>\n<|im_start|>assistant\n{examples['response'][i]}<|im_end|>"
-        elif 'text' in examples:
-            text = examples['text'][i]
-        else:
-            # Skip examples without required fields
-            continue
-        
-        formatted_texts.append(text)
-    
-    # Use the tokenizer to encode the texts
-    tokenized_inputs = tokenizer(
-        formatted_texts,
-        padding="max_length",
-        truncation=True,
-        max_length=MAX_LENGTH,
-        return_tensors=None  # Return Python lists instead of tensors
-    )
-    
-    return tokenized_inputs
-
-# Apply preprocessing to datasets
-print("Preprocessing datasets...")
+# Prepare datasets
+print("Preparing datasets...")
 train_dataset = dataset.from_dict(train_data)
 eval_dataset = dataset.from_dict(eval_data)
 
-train_tokenized = train_dataset.map(
-    preprocess_function,
-    batched=True,
-    remove_columns=train_dataset.column_names
-)
-
-eval_tokenized = eval_dataset.map(
-    preprocess_function,
-    batched=True,
-    remove_columns=eval_dataset.column_names
-)
-
-print(f"Train dataset size: {len(train_tokenized)}")
-print(f"Eval dataset size: {len(eval_tokenized)}")
-
-# Create data collator for completion-only loss
-data_collator = CompletionOnlyDataCollator(tokenizer)
-
-# Custom trainer for completion-only loss tracking
-class CompletionOnlyTrainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
-        """
-        Override compute_loss to properly handle the completion-only loss.
-        Since we're setting labels to -100 for tokens we want to ignore,
-        the default loss calculation will already handle this correctly.
-        """
-        outputs = model(**inputs)
-        loss = outputs.loss
+# Function to format the dataset in a way that SFTTrainer can use for completion-only loss
+def format_dataset(examples):
+    output_texts = []
+    
+    for i in range(len(examples['instruction'])):
+        if 'input' in examples and examples['input'][i]:
+            prompt = f"<|im_start|>user\n{examples['instruction'][i]}\n\n{examples['input'][i]}<|im_end|>"
+        else:
+            prompt = f"<|im_start|>user\n{examples['instruction'][i]}<|im_end|>"
+            
+        completion = f"<|im_start|>assistant\n{examples['response'][i]}<|im_end|>"
         
-        return (loss, outputs) if return_outputs else loss
+        # Create a dict with the proper structure expected by SFTTrainer
+        output_texts.append({
+            "text": f"{prompt}{completion}",
+            "prompt": prompt,
+            "completion": completion
+        })
+    
+    # Flatten the list of dicts into a dict of lists
+    result = {k: [d[k] for d in output_texts] for k in output_texts[0].keys()}
+    return result
+
+# Process the datasets
+train_formatted = format_dataset(train_data)
+eval_formatted = format_dataset(eval_data)
+
+# Convert back to datasets
+from datasets import Dataset
+train_dataset = Dataset.from_dict(train_formatted)
+eval_dataset = Dataset.from_dict(eval_formatted)
 
 # Enhanced loss tracking callback with plotting capability
 class LossTrackingCallback:
@@ -308,15 +228,75 @@ training_args = TrainingArguments(
     save_total_limit=3,
 )
 
-# Initialize the custom trainer
-print("Initializing CompletionOnlyTrainer...")
-trainer = CompletionOnlyTrainer(
+# Create a custom SFTTrainer class to handle completion-only loss
+class CompletionOnlySFTTrainer(SFTTrainer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # This will enable using completion-only loss calculation
+        self.train_completion_only = True
+        self.eval_completion_only = True
+        
+    def compute_loss(self, model, inputs, return_outputs=False):
+        """
+        How the loss is computed by trainer. By default, all tokens are weighted equally.
+        This modified version computes loss only on completion tokens.
+        """
+        if "labels" not in inputs:
+            raise ValueError("Labels must be provided for completion-only loss calculation")
+            
+        # Get the input_ids, attention_mask, and labels
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs["attention_mask"]
+        labels = inputs["labels"].clone()
+        
+        # Find assistant tokens to only use those for loss calculation
+        # For each example in the batch
+        for i in range(input_ids.shape[0]):
+            # Convert to list for easier processing
+            ids = input_ids[i].tolist()
+            
+            # Encode the assistant start token
+            asst_start_tokens = tokenizer("<|im_start|>assistant", add_special_tokens=False).input_ids
+            
+            # Find where the assistant response starts
+            try:
+                # Find the first occurrence of the assistant start token sequence
+                for j in range(len(ids) - len(asst_start_tokens) + 1):
+                    if ids[j:j+len(asst_start_tokens)] == asst_start_tokens:
+                        asst_start_idx = j
+                        break
+                else:
+                    # If not found, set all to -100 (will be ignored)
+                    labels[i, :] = -100
+                    continue
+                    
+                # Set all tokens before assistant to -100 (to be ignored in loss)
+                labels[i, :asst_start_idx] = -100
+                
+            except:
+                # If any error occurs, just use the original labels
+                pass
+        
+        # Update inputs with new labels
+        inputs["labels"] = labels
+        
+        # Forward pass
+        outputs = model(**inputs)
+        loss = outputs.loss
+        
+        return (loss, outputs) if return_outputs else loss
+
+# Initialize the custom SFTTrainer
+print("Initializing CompletionOnlySFTTrainer...")
+trainer = CompletionOnlySFTTrainer(
     model=model,
     args=training_args,
-    train_dataset=train_tokenized,
-    eval_dataset=eval_tokenized,
+    train_dataset=train_dataset,
+    eval_dataset=eval_dataset,
     tokenizer=tokenizer,
-    data_collator=data_collator,
+    compute_metrics=None,
+    packing=False,  # Make sure packing is disabled for completion-only loss
+    dataset_text_field="text"  # Use the full text field
 )
 
 # Add enhanced loss tracking callback
