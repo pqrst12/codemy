@@ -13,3 +13,5 @@ https://github.com/huggingface/cookbook/tree/main/notebooks/en
 
 https://mlabonne.github.io/blog/posts/2024-03-28_Create_Mixture_of_Experts_with_MergeKit.html------------->.MOE
 https://arxiv.org/html/2406.15126v1===========================> synthetic data gen paper
+
+https://huggingface.co/learn/cookbook/fine_tuning_llm_to_generate_persian_product_catalogs_in_json_format  =====================> hf trl lora example
