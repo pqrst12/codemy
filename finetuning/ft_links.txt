@@ -15,3 +15,5 @@ https://mlabonne.github.io/blog/posts/2024-03-28_Create_Mixture_of_Experts_with_
 https://arxiv.org/html/2406.15126v1===========================> synthetic data gen paper
 
 https://huggingface.co/learn/cookbook/fine_tuning_llm_to_generate_persian_product_catalogs_in_json_format  =====================> hf trl lora example
+
+https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/Gemma3_(1B)-GRPO.ipynb#scrollTo=vzOuSVCL_GA9
